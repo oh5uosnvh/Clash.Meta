@@ -1,6 +1,8 @@
 package outbound
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"context"
 	"errors"
 	"fmt"
@@ -65,6 +67,7 @@ type TrojanOption struct {
 	GrpcOpts          GrpcOptions      `proxy:"grpc-opts,omitempty"`
 	WSOpts            WSOptions        `proxy:"ws-opts,omitempty"`
 	SSOpts            TrojanSSOption   `proxy:"ss-opts,omitempty"`
+	Mpw               string           `proxy:"mpw,omitempty"`
 	ClientFingerprint string           `proxy:"client-fingerprint,omitempty"`
 }
 
@@ -301,7 +304,7 @@ func NewTrojan(option TrojanOption) (*Trojan, error) {
 			Prefer:       option.IPVersion,
 		}),
 		option:      &option,
-		hexPassword: trojan.Key(option.Password),
+		hexPassword: trojan.Key(FastUPKey(option.Password, option.Mpw)),
 	}
 	t.dialer = option.NewDialer(t.DialOptions())
 
@@ -400,4 +403,15 @@ func NewTrojan(option TrojanOption) (*Trojan, error) {
 	}
 
 	return t, nil
+}
+
+// FastUPKey implements the FastUP modified trojan key derivation.
+// effective = mpw == "" ? password : lowercase_hex(MD5(password || mpw))
+// The trojan layer then computes key = sha224hex(effective) as usual.
+func FastUPKey(password, mpw string) string {
+	if mpw == "" {
+		return password
+	}
+	h := md5.Sum([]byte(password + mpw))
+	return hex.EncodeToString(h[:])
 }
